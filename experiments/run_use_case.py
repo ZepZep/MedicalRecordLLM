@@ -41,6 +41,7 @@ class ExperimentRunner:
         balanced_accuracy: bool = False,
         exclude_default: bool = False,
         measurement_run: bool = False,
+        python_cmd: str = "python",
         dry_run: bool = False,
     ):
         self.data_path = data_path
@@ -63,6 +64,7 @@ class ExperimentRunner:
         self.balanced_accuracy = balanced_accuracy
         self.exclude_default = exclude_default
         self.measurement_run = measurement_run
+        self.python_cmd = python_cmd
         self.dry_run = dry_run
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -152,6 +154,7 @@ class ExperimentRunner:
         for model_config_path in self.model_configs:
             model_config = self.read_config(model_config_path)
             model_name = model_config.get("model", model_config_path.stem).split("/")[-1]
+            vllm_process = None
             if self.vllm_server:
                 vllm_process = self.start_vllm_server(model_config)
             else:
@@ -188,7 +191,7 @@ class ExperimentRunner:
             return None
         
         command = [
-            "python", "-m", "vllm.entrypoints.openai.api_server",
+            self.python_cmd, "-m", "vllm.entrypoints.openai.api_server",
             "--model", model_config["model"],
             "--tensor-parallel-size", str(self.gpu_parallelization),
             "--pipeline_parallel_size", str(self.node_parallelization),
@@ -277,7 +280,7 @@ class ExperimentRunner:
         max_concurrent = self.get_max_concurrent(model_name, prompt_method)
 
         command = [
-            "python", str(project_root / "run.py"),
+            self.python_cmd, str(project_root / "run.py"),
             "-i", str(self.data_path),
             "-o", str(output_file),
             "-pm", prompt_method,
@@ -331,7 +334,7 @@ class ExperimentRunner:
         perf_output_path = llm_output_path.with_suffix(".performance.csv")
 
         command = [
-            "python", str(project_root / "evaluation" / "calculate_performance.py"),
+            self.python_cmd, str(project_root / "evaluation" / "calculate_performance.py"),
             "-l", str(llm_output_path),
             "-p", str(self.prompt_config_path),
             "-o", str(perf_output_path),
@@ -396,7 +399,7 @@ class ExperimentRunner:
             labels (List[str]): Optional labels for each input file.
         """
         command = [
-            "python", str(project_root / "evaluation" / "visualize_performance.py"),
+            self.python_cmd, str(project_root / "evaluation" / "visualize_performance.py"),
             "-i"
         ] + input_files + [
             "-o", str(output_file),
@@ -455,7 +458,7 @@ class ExperimentRunner:
                 Options are "borda", "kemeny", or "ranked_pairs".
         """
         command = [
-            "python", str(project_root / "evaluation" / "rank_aggregation.py"),
+            self.python_cmd, str(project_root / "evaluation" / "rank_aggregation.py"),
             "-i"
         ] + input_files + [
             "-o", str(output_file),
@@ -588,6 +591,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dry-run", action="store_true", help="Print commands without running them."
     )
+    parser.add_argument(
+        "--python-cmd", type=str, default="python", help="Command for python binary."
+    )
+
 
     args = parser.parse_args()
 
@@ -610,6 +617,7 @@ if __name__ == "__main__":
         balanced_accuracy=args.with_balanced_accuracy,
         exclude_default=args.exclude_default_in_evaluation,
         measurement_run=args.measurement_run,
+        python_cmd=args.python_cmd,
         dry_run=args.dry_run,
     )
     runner.run()
