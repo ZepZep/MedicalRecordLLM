@@ -42,6 +42,7 @@ class ExperimentRunner:
         exclude_default: bool = False,
         measurement_run: bool = False,
         python_cmd: str = "python",
+        eval_prefix: str = "",
         dry_run: bool = False,
     ):
         self.data_path = data_path
@@ -65,6 +66,7 @@ class ExperimentRunner:
         self.exclude_default = exclude_default
         self.measurement_run = measurement_run
         self.python_cmd = python_cmd
+        self.eval_prefix = eval_prefix
         self.dry_run = dry_run
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -384,7 +386,7 @@ class ExperimentRunner:
             methods = [m for m, _ in method_files]
             files = [str(f) for _, f in method_files]
             labels = methods
-            out_file = self.output_dir / model_name / f"all_results.png"
+            out_file = self.output_dir / model_name / f"{self.eval_prefix}all_results.png"
             ranked_file = self.ranked_results.get(model_name, None)
 
             self.visualize(files, out_file, labels, ranked_file)
@@ -441,7 +443,7 @@ class ExperimentRunner:
         # Per-model comparison of prompt methods
         for model_name, method_files in self.performance_files.items():
             files = [str(f) for _, f in method_files]
-            out_file = self.output_dir / model_name / "ranked_results.csv"
+            out_file = self.output_dir / model_name / f"{self.eval_prefix}ranked_results.csv"
             self.rank(files, model_name, out_file, method="kemeny")
 
         self.logger.info("[Ranking] Rank aggregation completed.")
@@ -594,6 +596,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--python-cmd", type=str, default="python", help="Command for python binary."
     )
+    parser.add_argument(
+        "--eval-prefix", type=str, default="", help="Prefix for evaluation files (all_results.png, ranked_results.csv)"
+    )
 
 
     args = parser.parse_args()
@@ -618,6 +623,7 @@ if __name__ == "__main__":
         exclude_default=args.exclude_default_in_evaluation,
         measurement_run=args.measurement_run,
         python_cmd=args.python_cmd,
+        eval_prefix=args.eval_prefix,
         dry_run=args.dry_run,
     )
     runner.run()
