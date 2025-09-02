@@ -83,7 +83,7 @@ def plot_barplot(
     if wraptext:
         data[x] = data[x].apply(lambda x: '\n'.join(textwrap.wrap(str(x), width=15)))
 
-    sns.barplot(x=x, y=y, hue=hue, data=data, ax=ax, width=barwidth)
+    sns.barplot(x=x, y=y, hue=hue, data=data.reset_index(), ax=ax, width=barwidth)
     if ci_lower and ci_upper:
         if hue:
             x_levels = data[x].unique()

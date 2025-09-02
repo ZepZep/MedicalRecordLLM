@@ -96,7 +96,7 @@ def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda"):
     ranks = {}
     # Perform rank aggregation based on the specified method
     for field in results["field"].unique():
-        field_results = results[results["field"] == field]
+        field_results = results[results["field"] == field].copy()
         if method == "borda":
             # Borda count method
             field_results['rank'] = field_results['mean'].rank(ascending=False, method='min')
