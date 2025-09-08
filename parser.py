@@ -364,7 +364,7 @@ class FastEnsemble(Runnable):
             final_response[field] = values[best_idx]
 
         elapsed = time.time() - start_time
-        self.logger.info(f"Item ensembling completed in {elapsed:.2f}s ")
+        # self.logger.info(f"Item ensembling completed in {elapsed:.2f}s ")
         
         return {
             "reasoning": "Ensembled using voting + embedding similarity",
