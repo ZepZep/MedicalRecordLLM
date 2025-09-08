@@ -277,7 +277,8 @@ class ExperimentRunner:
             model_config (Dict[str, Any]): Model configuration dictionary.
         """
         model_name = model_config.get("model", model_config_path.stem).split("/")[-1]
-        output_file = self.output_dir / model_name / f"{prompt_method}.csv"
+        save_name = model_config.get("save_name", model_name)
+        output_file = self.output_dir / save_name / f"{prompt_method}.csv"
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         timeout = self.get_timeout(model_name, prompt_method)
@@ -326,7 +327,7 @@ class ExperimentRunner:
                 return
 
         try:
-            self.run_single_calculation(output_file, prompt_method, model_name)
+            self.run_single_calculation(output_file, prompt_method, save_name)
         except Exception as e:
             self.logger.error(f"[Error] Performance calculation failed for {output_file}")
             self.logger.error(e)
@@ -335,7 +336,7 @@ class ExperimentRunner:
             self.logger.error(f"[Unexpected Error] {str(e)}")
             return
 
-    def run_single_calculation(self, llm_output_path: Path, prompt_method: str, model_name: str):
+    def run_single_calculation(self, llm_output_path: Path, prompt_method: str, save_name: str):
         """
         Calculate performance metrics for a single LLM output file.
 
@@ -368,7 +369,7 @@ class ExperimentRunner:
             self.log_command(command)
             subprocess.run(command, check=True)
             self.logger.info(f"[Calculated] Performance for {llm_output_path}")
-            self.performance_files[model_name].append((prompt_method, perf_output_path))
+            self.performance_files[save_name].append((prompt_method, perf_output_path))
         except subprocess.CalledProcessError as e:
             self.logger.error(f"[Error] Failed to calculate performance for {llm_output_path}")
             self.logger.error(e)
@@ -393,12 +394,12 @@ class ExperimentRunner:
         self.logger.info("[Visualize] Starting visualization of performance results...")
 
         # Per-model comparison of prompt methods
-        for model_name, method_files in self.performance_files.items():
+        for save_name, method_files in self.performance_files.items():
             methods = [m for m, _ in method_files]
             files = [str(f) for _, f in method_files]
             labels = methods
-            out_file = self.output_dir / model_name / f"{self.eval_prefix}all_results.png"
-            ranked_file = self.ranked_results.get(model_name, None)
+            out_file = self.output_dir / save_name / f"{self.eval_prefix}all_results.png"
+            ranked_file = self.ranked_results.get(save_name, None)
 
             self.visualize(files, out_file, labels, ranked_file)
 
@@ -452,14 +453,14 @@ class ExperimentRunner:
         self.logger.info("[Ranking] Starting rank aggregation of performance results...")
 
         # Per-model comparison of prompt methods
-        for model_name, method_files in self.performance_files.items():
+        for save_name, method_files in self.performance_files.items():
             files = [str(f) for _, f in method_files]
-            out_file = self.output_dir / model_name / f"{self.eval_prefix}ranked_results.csv"
-            self.rank(files, model_name, out_file, method="kemeny")
+            out_file = self.output_dir / save_name / f"{self.eval_prefix}ranked_results.csv"
+            self.rank(files, save_name, out_file, method="kemeny")
 
         self.logger.info("[Ranking] Rank aggregation completed.")
 
-    def rank(self, input_files: List[str], model_name: str, output_file: Optional[Path] = None, method: str = "kemeny"):
+    def rank(self, input_files: List[str], save_name: str, output_file: Optional[Path] = None, method: str = "kemeny"):
         """
         Rank aggregation of multiple LLM performance files.
 
@@ -486,7 +487,7 @@ class ExperimentRunner:
             self.log_command(command)
             subprocess.run(command, check=True)
             self.logger.info(f"[Ranking] Results saved to {output_file}")
-            self.ranked_results[model_name] = str(output_file)
+            self.ranked_results[save_name] = str(output_file)
         except subprocess.CalledProcessError as e:
             self.logger.error(f"[Error] Failed to run rank aggregation for {input_files}")
             self.logger.error(e)
