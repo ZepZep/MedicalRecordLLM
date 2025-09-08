@@ -297,6 +297,7 @@ class ExperimentRunner:
             "--patient-id-col", self.patient_id_col,
             "--timeout", str(timeout),
             "-mc", str(max_concurrent),
+            "-u", self.base_url,
         ]
         
         additional_system_instructions = [x for x in [
