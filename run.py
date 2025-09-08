@@ -140,6 +140,13 @@ def main():
         help="Do you want to print intermediates, such as raw prompts etc. (Nice for debugging but slows down workflow quite a bit)"
     )
     parser.add_argument(
+        "--additional-system-instructions",
+        required=False,
+        type=str,
+        default=None,
+        help="Additional system instructions",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Do you want to do a dry run, trying out the whole workflow without running the LLM"
@@ -167,6 +174,7 @@ def main():
         patterns_path=args.regex,
         save_raw_output=args.save_raw,
         dry_run=args.dry_run,
+        additional_system_instructions=args.additional_system_instructions,
         verbose=args.verbose,
     )
 

@@ -393,6 +393,7 @@ class VLLMReportParser:
         patterns_path: Optional[str] = None,
         sentence_model: str = "all-mpnet-base-v2",
         save_raw_output: bool = False,
+        additional_system_instructions: Optional[str] = None,
         verbose: bool = False,
         dry_run: bool = False
     ):
@@ -450,6 +451,7 @@ class VLLMReportParser:
         # Additional configurations
         self.patterns = self._load_patterns(patterns_path) if patterns_path else None
         self.save_raw_output = save_raw_output
+        self.additional_system_instructions = additional_system_instructions
         self.verbose = verbose
         self.logger = logging.getLogger(__name__)
         if self.verbose:
@@ -1027,6 +1029,8 @@ class VLLMReportParser:
                     "5. If a value is missing or not mentioned, use the specified default for that field.",
                     "6. NEVER include commentary, explanations, or deviate from the specified format in the final JSON."
                 ]
+            if self.additional_system_instructions:
+                system_instructions.append(self.additional_system_instructions)
 
             system_instructions = "\n".join(system_instructions)
 
