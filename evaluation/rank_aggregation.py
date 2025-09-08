@@ -56,7 +56,7 @@ def kemeny_young_aggregation(votes):
     n_perm_zeros = math.log10(math.factorial(len(items)))
     if n_perm_zeros > 9:
         raise ValueError(f"Too many votes: {len(items)}. Would result in > 1e{n_perm_zeros:d} permutations. Use a different method.")
-    
+
     all_perms = list(itertools.permutations(items))
     best_score = float("inf")
     best_perm = None
@@ -197,7 +197,7 @@ def wilcoxon_stouffer_ranking(results_df, metric="mean", alpha=0.05):
         'p_value_matrix': p_value_matrix
     }
 
-def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda", metric:str = "mean"):
+def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda", metric:str = "mean", multi_model:bool = False):
     """
     Rank aggregation of multiple LLM performance files.
     
@@ -215,6 +215,13 @@ def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda", 
     
     if not all(Path(output).exists() for output in LLM_outputs):
         raise FileNotFoundError("One or more LLM output files do not exist.")
+
+    if multi_model:
+        model_dirs = LLM_outputs
+        LLM_outputs = []
+        for model_dir in model_dirs:
+            LLM_outputs.extend(map(Path, glob(f"{model_dir}/*/*.performance.csv")))
+        print("Comparing files:\n  " + "\n  ".join(str(x) for x in LLM_outputs))
     
     results = []
     for output in LLM_outputs:
@@ -223,7 +230,11 @@ def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda", 
         
         # Read and concatenate all CSV files
         df = pd.read_csv(output)
-        df["source"] = output.with_suffix('').stem  # Add a column to identify the source file
+        if not multi_model:
+            df["source"] = output.with_suffix('').stem  # Add a column to identify the source file
+        else:
+            df["source"] = re.sub(".*/(.*)/(.*).performance.csv", r"\1/\2", str(output))
+
         df = df[df["metric_type"] != "micro_avgs"]  # Exclude the "All fields" row
         results.append(df)
 
@@ -311,6 +322,9 @@ if __name__ == "__main__":
         default="mean",
         help="Primary metric for rank aggregation."
     )
+    parser.add_argument(
+        "--multi-model", action="store_true", help="Rank all models in provided directories"
+    )
 
     args = parser.parse_args()
-    rank(args.input_files, args.output_file, args.method, args.metric)
+    rank(args.input_files, args.output_file, args.method, args.metric, args.multi_model)
