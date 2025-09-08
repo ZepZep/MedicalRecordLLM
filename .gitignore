@@ -169,3 +169,15 @@ experiment/*
 setup.sh
 slurm/*
 todo.txt
+
+
+mmci
+output
+.ipynb_checkpoints
+experiments/mmci_test
+notebook
+batch.sh
+testrun.sh
+chat_reasoning.py
+experiments/run_use_case_bak.py
+resources/data

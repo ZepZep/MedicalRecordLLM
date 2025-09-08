@@ -506,6 +506,33 @@ class ExperimentRunner:
             save_name, prompt_method = m.groups()
             self.performance_files[save_name].append((prompt_method, path))
 
+def test_openai():
+    from openai import OpenAI
+    client = OpenAI(
+        base_url='https://vllm.cloud.trusted.e-infra.cz/v1',
+        api_key="pes"
+    )
+    print([m.id for m in client.models.list()])
+
+def test_ChatOpenAI():
+    from langchain_openai import ChatOpenAI
+
+    llm = ChatOpenAI(
+        model="deepseek-r1",
+        base_url="https://vllm.cloud.trusted.e-infra.cz/v1",
+        api_key="pes",
+    )
+
+    messages = [
+        (
+            "system",
+            "You are a helpful assistant that translates English to Czech. Translate the user sentence.",
+        ),
+        ("human", "I love programming."),
+    ]
+    ai_msg = llm.invoke(messages)
+    print(ai_msg)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run all LLM experiments.")
     parser.add_argument(
