@@ -28,6 +28,10 @@ import backoff
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+
 class SpecialValues(str, Enum):
     MISSING = "missing"
     DEFAULT = "default"
@@ -359,7 +363,7 @@ class FastEnsemble(Runnable):
             final_response[field] = values[best_idx]
 
         elapsed = time.time() - start_time
-        self.logger.info(f"Item ensembling completed in {elapsed:.2f}s ")
+        # self.logger.info(f"Item ensembling completed in {elapsed:.2f}s ")
         
         return {
             "reasoning": "Ensembled using voting + embedding similarity",
