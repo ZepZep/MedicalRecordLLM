@@ -43,6 +43,7 @@ class ExperimentRunner:
         measurement_run: bool = False,
         python_cmd: str = "python",
         eval_prefix: str = "",
+        additional_system_instructions: Optional[str] = None,
         dry_run: bool = False,
     ):
         self.data_path = data_path
@@ -67,6 +68,7 @@ class ExperimentRunner:
         self.measurement_run = measurement_run
         self.python_cmd = python_cmd
         self.eval_prefix = eval_prefix
+        self.additional_system_instructions = additional_system_instructions
         self.dry_run = dry_run
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -293,6 +295,15 @@ class ExperimentRunner:
             "--timeout", str(timeout),
             "-mc", str(max_concurrent),
         ]
+        additional_system_instructions = [x for x in [
+            model_config.get("additional_system_instructions"),
+            self.additional_system_instructions
+        ] if x]
+
+        if additional_system_instructions:
+            command.extend([
+                "--additional-system-instructions", "\n".join(additional_system_instructions)
+            ])
 
         if self.dry_run:
             self.logger.info("[Dry Run] Would run experiment with command: " + " ".join(command))
@@ -482,6 +493,14 @@ class ExperimentRunner:
         except Exception as e:
             self.logger.error(f"[Unexpected Error] {str(e)}")
 
+    def gather_performance_files(self):
+        base_path = self.output_dir
+
+        for path in glob(f"{base_path}/*/*.performance.csv"):
+            m = re.match(fr"{base_path}/(.*)/(.*).performance.csv", path)
+            save_name, prompt_method = m.groups()
+            self.performance_files[save_name].append((prompt_method, path))
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run all LLM experiments.")
     parser.add_argument(
@@ -599,6 +618,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--eval-prefix", type=str, default="", help="Prefix for evaluation files (all_results.png, ranked_results.csv)"
     )
+    parser.add_argument(
+        "--only-rank-all", action="store_true", help="Ignores model configs, skips runa and ranks all results in the output folder."
+    )
+    parser.add_argument(
+        "--additional-system-instructions",
+        required=False,
+        type=str,
+        default=None,
+        help="Additional system instructions",
+    )
+    
 
 
     args = parser.parse_args()
@@ -624,8 +654,12 @@ if __name__ == "__main__":
         measurement_run=args.measurement_run,
         python_cmd=args.python_cmd,
         eval_prefix=args.eval_prefix,
+        additional_system_instructions=args.additional_system_instructions,
         dry_run=args.dry_run,
     )
-    runner.run()
+    if not args.only_rank_all:
+        runner.run()
+    else:
+        runner.gather_performance_files()
     runner.run_ranking()
     runner.run_visualization()
