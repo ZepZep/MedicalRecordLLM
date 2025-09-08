@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from collections import defaultdict
+from glob import glob
+import re
 
 try:
     project_root = Path(__file__).resolve().parents[1]
@@ -296,6 +298,7 @@ class ExperimentRunner:
             "--timeout", str(timeout),
             "-mc", str(max_concurrent),
         ]
+        
         additional_system_instructions = [x for x in [
             model_config.get("additional_system_instructions"),
             self.additional_system_instructions
