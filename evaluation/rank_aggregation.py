@@ -4,6 +4,10 @@ from pathlib import Path
 import itertools
 import networkx as nx
 from collections import defaultdict
+from glob import glob
+import re
+from tqdm.auto import tqdm
+import math
 
 def pairwise_preferences(votes):
     """
@@ -16,7 +20,7 @@ def pairwise_preferences(votes):
                 prefs[(ranking[i], ranking[j])] += 1
     return prefs
 
-def ranked_pairs_aggregation(votes):
+def ranked_pairs_aggregation(votes, desc=None):
     """
     Ranked Pairs (Tideman) algorithm.
     votes: list of rankings (lists of sources)
@@ -28,7 +32,7 @@ def ranked_pairs_aggregation(votes):
     # Sort edges by strength of victory
     edges = sorted(prefs.items(), key=lambda x: x[1], reverse=True)
 
-    for (winner, loser), weight in edges:
+    for (winner, loser), weight in tqdm(edges, desc=desc):
         G.add_edge(winner, loser, weight=weight)
         try:
             # Check for cycles
@@ -45,11 +49,15 @@ def kemeny_young_aggregation(votes):
     Kemeny-Young aggregation: brute-force version for small N.
     """
     items = set(itertools.chain(*votes))
+
+    n_perm_zeros = math.log10(math.factorial(len(items)))
+    if n_perm_zeros > 9:
+        raise ValueError(f"Too many votes: {len(items)}. Would result in > 1e{n_perm_zeros:d} permutations. Use a different method.")
     all_perms = list(itertools.permutations(items))
     best_score = float("inf")
     best_perm = None
 
-    for perm in all_perms:
+    for perm in tqdm(all_perms):
         score = 0
         for vote in votes:
             for i in range(len(perm)):
@@ -63,7 +71,7 @@ def kemeny_young_aggregation(votes):
 
     return list(best_perm)
 
-def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda"):
+def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda", multi_model:bool = False):
     """
     Rank aggregation of multiple LLM performance files.
     
@@ -79,6 +87,13 @@ def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda"):
     
     if not all(Path(output).exists() for output in LLM_outputs):
         raise FileNotFoundError("One or more LLM output files do not exist.")
+
+    if multi_model:
+        model_dirs = LLM_outputs
+        LLM_outputs = []
+        for model_dir in model_dirs:
+            LLM_outputs.extend(map(Path, glob(f"{model_dir}/*/*.performance.csv")))
+        print("Comparing files:\n  " + "\n  ".join(str(x) for x in LLM_outputs))
     
     results = []
     for output in LLM_outputs:
@@ -87,7 +102,11 @@ def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda"):
         
         # Read and concatenate all CSV files
         df = pd.read_csv(output)
-        df["source"] = output.with_suffix('').stem  # Add a column to identify the source file
+        if not multi_model:
+            df["source"] = output.with_suffix('').stem  # Add a column to identify the source file
+        else:
+            df["source"] = re.sub(".*/(.*)/(.*).performance.csv", r"\1/\2", str(output))
+
         df = df[df["metric_type"] != "micro_avgs"]  # Exclude the "All fields" row
         results.append(df)
 
@@ -111,7 +130,7 @@ def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda"):
         elif method == "ranked_pairs":
             # Ranked Pairs method
             vote = list(field_results.sort_values("mean", ascending=False)["source"])
-            final_order = ranked_pairs_aggregation([vote])
+            final_order = ranked_pairs_aggregation([vote], desc=f"Ranking {field:<20}")
             rank_map = {source: i + 1 for i, source in enumerate(final_order)}
             field_results["rank"] = field_results["source"].map(rank_map)
             ranks[field] = field_results[["source", "rank"]].set_index('source').to_dict()['rank']
@@ -160,6 +179,9 @@ if __name__ == "__main__":
         choices=["borda", "kemeny", "ranked_pairs"],
         help="Method for rank aggregation."
     )
+    parser.add_argument(
+        "--multi-model", action="store_true", help="Rank all models in provided directories"
+    )
 
     args = parser.parse_args()
-    rank(args.input_files, args.output_file, args.method)
+    rank(args.input_files, args.output_file, args.method, args.multi_model)
