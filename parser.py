@@ -415,6 +415,7 @@ class VLLMReportParser:
             verbose: Enable verbose logging for debugging
             dry_run: Enable dry run for sanity checking without llm
         """
+        self.max_tokens = params_config.get('max_tokens', 2048)
         # Initialize OpenAI client
         self.llm = ChatOpenAI(
             model_name=params_config.get('model'),
@@ -422,9 +423,10 @@ class VLLMReportParser:
             openai_api_key=api_key,
             temperature=params_config.get('temperature', 0.3),
             top_p=params_config.get('top_p', 0.9),
-            max_tokens=params_config.get('max_tokens', 2048),
+            max_tokens=self.max_tokens,
             frequency_penalty=params_config.get('frequency_penalty', 0.0),
             presence_penalty=params_config.get('presence_penalty', 0.0),
+            extra_body={"separate_reasoning": False},
             #model_kwargs={
             #    'top_k': params_config.get('top_k', 50),
             #    'repetition_penalty' : params_config.get('repetition_penalty', 1.2),
@@ -1250,7 +1252,16 @@ class VLLMReportParser:
             prompt_template = prompt_template.pipe(self.add_names_to_messages)
 
             parser = ReasoningAndDynamicJSONParser(output_format, model=self.sentence_model, dry_run=self.dry_run)
-            base_chain = prompt_template | self.llm | parser
+            
+            from langchain_core.runnables import RunnableLambda
+            def log_msg(msg):
+                if msg.usage_metadata["output_tokens"] == self.max_tokens:
+                    self.logger.warning("Response contains max_tokens tokens. Consider raising the limit.")
+
+                return msg
+                
+            base_chain = prompt_template | self.llm | RunnableLambda(log_msg) | parser
+            
             if self.prompt_method == "SelfConsistency":
                 # Initialize our fast ensemble strategy
                 self.chat_chain = self._create_self_consistency_chain(base_chain)
