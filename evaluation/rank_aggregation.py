@@ -71,7 +71,7 @@ def kemeny_young_aggregation(votes):
 
     return list(best_perm)
 
-def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda", multi_model:bool = False):
+def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda", multi_model:bool = False, metric:str = "mean"):
     """
     Rank aggregation of multiple LLM performance files.
     
@@ -118,18 +118,18 @@ def rank(LLM_outputs:List[Path], output_file:bool = None, method:str = "borda", 
         field_results = results[results["field"] == field].copy()
         if method == "borda":
             # Borda count method
-            field_results['rank'] = field_results['mean'].rank(ascending=False, method='min')
+            field_results['rank'] = field_results[metric].rank(ascending=False, method='min')
             ranks[field] = field_results[['source', 'rank']].set_index('source').to_dict()['rank']
         elif method == "kemeny":
             # Kemedy-Young method
-            vote = list(field_results.sort_values("mean", ascending=False)["source"])
+            vote = list(field_results.sort_values(metric, ascending=False)["source"])
             final_order = kemeny_young_aggregation([vote])
             rank_map = {source: i + 1 for i, source in enumerate(final_order)}
             field_results["rank"] = field_results["source"].map(rank_map)
             ranks[field] = field_results[["source", "rank"]].set_index('source').to_dict()['rank']
         elif method == "ranked_pairs":
             # Ranked Pairs method
-            vote = list(field_results.sort_values("mean", ascending=False)["source"])
+            vote = list(field_results.sort_values(metric, ascending=False)["source"])
             final_order = ranked_pairs_aggregation([vote], desc=f"Ranking {field:<20}")
             rank_map = {source: i + 1 for i, source in enumerate(final_order)}
             field_results["rank"] = field_results["source"].map(rank_map)
@@ -180,8 +180,14 @@ if __name__ == "__main__":
         help="Method for rank aggregation."
     )
     parser.add_argument(
+        "--metric",
+        type=str,
+        default="mean",
+        help="Primary metric for rank aggregation."
+    )
+    parser.add_argument(
         "--multi-model", action="store_true", help="Rank all models in provided directories"
     )
 
     args = parser.parse_args()
-    rank(args.input_files, args.output_file, args.method, args.multi_model)
+    rank(args.input_files, args.output_file, args.method, args.multi_model, args.metric)
