@@ -12,6 +12,7 @@ from typing import List, Dict, Optional, Any
 from collections import defaultdict
 from glob import glob
 import re
+from tqdm.auto import tqdm
 
 try:
     project_root = Path(__file__).resolve().parents[1]
@@ -41,7 +42,7 @@ class ExperimentRunner:
         vllm_timeout: int = 600,
         base_url: str = "http://localhost:8000/v1/",
         balanced_accuracy: bool = False,
-        exclude_default: bool = False,
+        strict_metrics: bool = False,
         measurement_run: bool = False,
         python_cmd: str = "python",
         eval_prefix: str = "",
@@ -66,7 +67,7 @@ class ExperimentRunner:
         self.vllm_timeout = vllm_timeout
         self.base_url = base_url
         self.balanced_accuracy = balanced_accuracy
-        self.exclude_default = exclude_default
+        self.strict_metrics = strict_metrics
         self.measurement_run = measurement_run
         self.python_cmd = python_cmd
         self.eval_prefix = eval_prefix
@@ -160,11 +161,13 @@ class ExperimentRunner:
         for model_config_path in self.model_configs:
             model_config = self.read_config(model_config_path)
             model_name = model_config.get("model", model_config_path.stem).split("/")[-1]
+            save_name = model_config.get("save_name", model_name)
+            output_file = self.output_dir / save_name / f"{prompt_method}.csv"
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
             vllm_process = None
             if self.vllm_server:
                 vllm_process = self.start_vllm_server(model_config)
-            else:
-                vllm_process = None
 
             try:
                 self.wait_for_vllm_ready(timeout=self.vllm_timeout)
@@ -175,13 +178,41 @@ class ExperimentRunner:
                 continue
 
             for prompt_method in self.prompt_methods:
-                self.run_single_experiment(prompt_method, model_config_path, model_config)
+                if self.measurement_run:
+                    self.logger.info("[Measurement Run] Skip running experiment, going straight to measurement calculations")
+                else:
+                    self.run_single_experiment(prompt_method, model_config_path, model_config, model_name, output_file)
+                self.run_single_calculation_catch(output_file, prompt_method, save_name)
 
             if vllm_process or self.dry_run and not self.measurement_run:
                 self.kill_vllm_server(vllm_process)
 
             self.logger.info(f"[Completed] All experiments for model {model_config.get('model', model_config_path.stem)}")
 
+    def only_rank_run(self):
+        if self.measurement_run:
+            from multiprocessing.pool import ThreadPool
+
+            args_list = []
+            
+            def calc(args):
+                self.run_single_calculation_catch(*args)
+                
+            for model_dir in self.output_dir.iterdir():
+                if not model_dir.is_dir():
+                    continue
+                for prompt_method in self.prompt_methods:
+                    save_name = model_dir.name
+                    output_file = model_dir / f"{prompt_method}.csv"
+                    args_list.append((output_file, prompt_method, save_name))
+            with ThreadPool(12) as pool, tqdm(desc="Measuring", total=len(args_list)) as pbar:
+                for _ in pool.imap_unordered(calc, args_list):
+                    pbar.update(1)
+                    
+        else:
+            runner.gather_performance_files()
+        
+        
     def start_vllm_server(self, model_config: Dict[str, Any]) -> Optional[subprocess.Popen]:
         """
         Start the vLLM server for the given model configuration.
@@ -212,7 +243,7 @@ class ExperimentRunner:
             return True
         
         self.log_command(command)
-        self.logger.info(f"[Starting vLLM] {model_config['model']}")
+        self.logger.info(f"[Starting vLLM] {modesave_namel_config['model']}")
         return subprocess.Popen(command)
 
     def wait_for_vllm_ready(self, timeout=600, interval=1):
@@ -269,7 +300,7 @@ class ExperimentRunner:
             process.kill()
         self.logger.info("[Killed] vLLM server")
 
-    def run_single_experiment(self, prompt_method: str, model_config_path: Path, model_config: Dict[str, Any]):
+    def run_single_experiment(self, prompt_method: str, model_config_path: Path, model_config: Dict[str, Any], model_name: str, output_file: Path):
         """
         Run a single experiment for a given prompt method and model configuration.
 
@@ -278,11 +309,6 @@ class ExperimentRunner:
             model_config_path (Path): Path to the model configuration file.
             model_config (Dict[str, Any]): Model configuration dictionary.
         """
-        model_name = model_config.get("model", model_config_path.stem).split("/")[-1]
-        save_name = model_config.get("save_name", model_name)
-        output_file = self.output_dir / save_name / f"{prompt_method}.csv"
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
         timeout = self.get_timeout(model_name, prompt_method)
         max_concurrent = self.get_max_concurrent(model_name, prompt_method)
 
@@ -309,27 +335,25 @@ class ExperimentRunner:
             command.extend([
                 "--additional-system-instructions", "\n".join(additional_system_instructions)
             ])
-
+        
         if self.dry_run:
             self.logger.info("[Dry Run] Would run experiment with command: " + " ".join(command))
             return
         
-        if self.measurement_run:
-            self.logger.info("[Measurement Run] Skip running experiment, going straight to measurement calculations")
-        else:
-            try:
-                self.log_command(command)
-                subprocess.run(command, check=True)
-                self.logger.info(f"[Success] Experiment completed for {prompt_method} + {model_name}")
-                self.logger.info(f"[Output] Results saved to {output_file}")
-            except subprocess.CalledProcessError as e:
-                self.logger.error(f"[Error] Failed to run experiment for {prompt_method} + {model_name}")
-                self.logger.error(e)
-                return
-            except Exception as e:
-                self.logger.error(f"[Unexpected Error] {str(e)}")
-                return
+        try:
+            self.log_command(command)
+            subprocess.run(command, check=True)
+            self.logger.info(f"[Success] Experiment completed for {prompt_method} + {model_name}")
+            self.logger.info(f"[Output] Results saved to {output_file}")
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"[Error] Failed to run experiment for {prompt_method} + {model_name}")
+            self.logger.error(e)
+            return
+        except Exception as e:
+            self.logger.error(f"[Unexpected Error] {str(e)}")
+            return
 
+    def run_single_calculation_catch(self, output_file, prompt_method, save_name):
         try:
             self.run_single_calculation(output_file, prompt_method, save_name)
         except Exception as e:
@@ -362,7 +386,7 @@ class ExperimentRunner:
             command.extend([
                 "--balanced-accuracy"
             ])
-        if self.exclude_default:
+        if self.strict_metrics:
             command.append("--strict-metrics")
 
         if self.dry_run:
@@ -634,7 +658,7 @@ if __name__ == "__main__":
         help="Use balanced accuracy and macro average for performance calculation."
     )
     parser.add_argument(
-        "--exclude-default-in-evaluation",
+        "--strict-metrics",
         action="store_true",
         help="Exclude entries with default values in ground truth from performance calculations."
     )
@@ -682,16 +706,16 @@ if __name__ == "__main__":
         vllm_timeout=args.vllm_timeout,
         base_url=args.vllm_base_url,
         balanced_accuracy=args.with_balanced_accuracy,
-        exclude_default=args.exclude_default_in_evaluation,
+        strict_metrics=args.strict_metrics,
         measurement_run=args.measurement_run,
         python_cmd=args.python_cmd,
         eval_prefix=args.eval_prefix,
         additional_system_instructions=args.additional_system_instructions,
         dry_run=args.dry_run,
     )
-    if not args.only_rank_all:
-        runner.run()
+    if args.only_rank_all:
+        runner.only_rank_run()
     else:
-        runner.gather_performance_files()
+        runner.run()
     runner.run_ranking()
     runner.run_visualization()
